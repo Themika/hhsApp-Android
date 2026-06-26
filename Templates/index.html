@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HHS Stroke Protocol Engine</title>
+    <link rel="stylesheet" href="../Styles/style.css">
+</head>
+<body>
+
+    <!-- PRIMARY SCREENING DASHBOARD VIEW -->
+    <div class="dashboard-container" id="screeningView">
+        <header class="dash-header">
+            <div class="brand">
+                <span class="pulse-icon"></span>
+                <h1>HHS Clinical Trials Flow Engine</h1>
+            </div>
+            <div class="header-controls">
+                <button type="button" class="ctrl-btn save-btn" onclick="downloadTxtFile()">Export TXT</button>
+                <button type="button" class="ctrl-btn add-trigger" onclick="openControlPage(false)">➕ Add Step</button>
+            </div>
+        </header>
+
+        <main class="dash-content" id="dynamicQuestionsContainer">
+            <!-- Dynamically populated from questions.txt -->
+        </main>
+
+        <div class="dash-content">
+            <div class="results-wrapper hidden" id="cardResults">
+                <div class="results-bar-header">
+                    <h3>⚡ Matching Clinical Trial Allocations</h3>
+                    <span class="badge" id="matchBadge">0 Matches</span>
+                </div>
+                <div id="resultsContent"></div>
+                <button type="button" class="continue-btn hidden" id="continueBtn" onclick="advanceWorkflow()">
+                    Advance to Next Protocol Stage &rarr;
+                </button>
+            </div>
+        </div>
+
+        <footer class="dash-footer">
+            <button type="button" class="reset-btn" onclick="resetWorkflowEngine()">Reset Screening Protocol</button>
+        </footer>
+    </div>
+
+
+    <!-- DEDICATED CONTROL PAGE VIEW (CREATOR & TRIAL-LEVEL EDITOR MODE) -->
+    <div class="dashboard-container hidden" id="creatorView">
+        <header class="dash-header creator-header">
+            <div class="brand">
+                <h1 id="pageViewModeTitle">Protocol Stage Configurator</h1>
+            </div>
+            <button type="button" class="ctrl-btn cancel-btn" onclick="closeControlPage()">&larr; Back to Dashboard</button>
+        </header>
+
+        <main class="dash-content">
+            
+            <div class="creator-intro">
+                <h2><span id="managementActionLabel">Create</span> Step Entry <span id="autoStepBadge" class="step-counter-badge">--</span></h2>
+                <p id="routingEngineHelperText">The system automatically links this new step into the end of your protocol chain.</p>
+            </div>
+
+            <div class="management-form">
+                <!-- SECTION 1: CORE ROUTING QUESTION -->
+                <div class="form-section">
+                    <h3>1. Core Step Parameters</h3>
+                    <div class="form-grid">
+                        <label class="full-width">Card Section Title
+                            <input type="text" id="newTitle" placeholder="e.g., Diagnosis Verification (E)">
+                        </label>
+                        <label class="full-width">Question / Clinical Prompt Text
+                            <input type="text" id="newPrompt" placeholder="e.g., Is there an active history of atrial fibrillation?">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- SECTION 2: LIVE PREVIEW OF QUEUED TRIAL OPTIONS FOR THIS STEP -->
+                <div class="form-section">
+                    <h3>2. Configured Trial Options for this Step</h3>
+                    <div id="queuedTrialsContainer" class="queued-options-list">
+                        <p class="empty-state-text">No trial allocation options attached to this step yet.</p>
+                    </div>
+                </div>
+
+                <!-- SECTION 3: MULTI-OPTION TOOLKIT PANEL WITH EDIT STATE TRACKING -->
+                <div class="form-section trial-builder-card" id="trialDraftingCard">
+                    <h3 style="color: #2563eb;" id="trialFormActionHeading">➕ Add / Draft a Trial Option</h3>
+                    <div class="form-grid">
+                        <label>Trial Program Name
+                            <input type="text" id="tName" placeholder="e.g., TWIST-2">
+                        </label>
+                        <label>Primary Coordinator Contact Info
+                            <input type="text" id="tContact" placeholder="e.g., RC Name — 905 555 0192">
+                        </label>
+                        <label class="full-width">Trial Description Summary
+                            <textarea id="tDesc" rows="2" placeholder="Provide a brief abstract summary detailing the intent and context parameters..."></textarea>
+                        </label>
+                    </div>
+
+                    <div class="bullet-builder-block">
+                        <label>Inclusion Eligibility Criteria (Bullet Points for this Option)</label>
+                        <div class="bullet-input-row">
+                            <input type="text" id="bulletInput" placeholder="Type a standalone criteria condition phrase...">
+                            <button type="button" class="add-bullet-btn" onclick="addBulletPointToDraft()">+ Add Bullet</button>
+                        </div>
+                        <ul class="live-bullet-preview" id="bulletPreviewList"></ul>
+                    </div>
+                    
+                    <div class="option-form-actions-row">
+                        <button type="button" class="add-option-btn" id="commitTrialBtn" onclick="commitOptionToStepQueue()">Attach Option to Step Data Matrix</button>
+                        <button type="button" class="ctrl-btn cancel-btn hidden" id="cancelTrialEditBtn" onclick="clearDraftOptionForm()">Cancel Edit</button>
+                    </div>
+                </div>
+
+                <button type="button" class="submit-btn active-submit" id="formSubmitBtn" onclick="saveNewStepAndReturn()">Save Complete Step with Options</button>
+            </div>
+        </main>
+    </div>
+    <script src="../Scripts/script.js"></script>
+</body>
+</html>

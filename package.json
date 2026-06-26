@@ -1,0 +1,32 @@
+{
+  "name": "hhs-stroke-protocol-engine",
+  "version": "1.0.0",
+  "description": "Clinical Trials Flow Engine Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "build": {
+    "appId": "com.hhs.protocolengine",
+    "productName": "HHS Protocol Engine",
+    "files": [
+      "main.js",
+      "Templates/**/*",
+      "Scripts/**/*",
+      "Styles/**/*"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "mac": {
+      "target": "dmg"
+    }
+  },
+  "dependencies": {
+    "update-electron-app": "^3.2.0"
+  }
+}
