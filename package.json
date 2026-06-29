@@ -1,21 +1,55 @@
 {
   "name": "hhs-stroke-protocol-engine",
   "version": "1.0.0",
+  "description": "HHS Clinical Trials and Stroke Protocol Workflow Engine",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win"
   },
   "build": {
     "appId": "com.hhs.protocol",
+    "productName": "HHS Stroke Protocol Engine",
+    "directories": {
+      "output": "dist"
+    },
     "publish": {
       "provider": "github",
       "owner": "Themika",
       "repo": "hhsApp"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "asar": true
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
     }
   },
   "dependencies": {
-    "electron": "^31.0.0",
     "electron-updater": "^6.0.0",
     "pdfjs-dist": "^6.1.200"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^26.15.3"
   }
 }

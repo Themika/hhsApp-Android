@@ -35,7 +35,8 @@
           "Use of EVT within 24 hours of symptom onset or LSN",
           "Ages ≥ 18 years",
           "Sustained SBP ≥150 mmHg (2 successive readings <10 mins apart) within 3h after EVT"
-        ]
+        ],
+        "pdfData": null
       },
       {
         "name": "REMEDY2 (Ng)",

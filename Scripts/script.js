@@ -600,3 +600,46 @@ function handlePdfUpload(event) {
     };
     reader.readAsDataURL(file);
 }
+function renderQueuedTrialsList() {
+    const container = document.getElementById('queuedTrialsContainer');
+    if (stagedTrialsArray.length === 0) {
+        container.innerHTML = `<p class="empty-state-text">No trial allocation options attached to this step yet.</p>`;
+        return;
+    }
+
+    container.innerHTML = stagedTrialsArray.map((trial, index) => `
+        <div class="queued-trial-item-row">
+            <div class="queued-item-meta">
+                <strong>${trial.name}</strong> <span style="color:#64748b; font-size:12px;">(${trial.contact})</span>
+                <div style="font-size:12px; color:#475569; margin-top:2px;">${trial.desc}</div>
+                
+                <div style="font-size:11px; color:#3b82f6; margin-top:4px; cursor:pointer; user-select:none; display:inline-block; font-weight:500;" onclick="toggleInlineCriteria(this, ${index})">
+                    • Includes ${(trial.criteria || []).length} inclusion bullet points <span class="toggle-arrow" style="font-size:9px; vertical-align:middle; margin-left:2px;">▶</span>
+                </div>
+                
+                <ul id="inline-criteria-${index}" style="display:none; margin-top:6px; margin-bottom:6px; padding-left:20px; font-size:12px; color:#475569; list-style-type:disc; line-height:1.4;">
+                    ${(trial.criteria || []).map(c => `<li style="margin-bottom:2px;">${c}</li>`).join('')}
+                </ul>
+            </div>
+            <div class="queued-item-control-buttons">
+                <button type="button" class="edit-option-inline-btn" onclick="editOptionFromStepQueue(${index})">✏️ Edit Option</button>
+                <button type="button" class="remove-option-from-queue-btn" onclick="removeOptionFromStepQueue(${index})">Remove</button>
+            </div>
+        </div>
+    `).join('');
+    
+}
+function toggleInlineCriteria(element, index) {
+    const targetList = document.getElementById(`inline-criteria-${index}`);
+    const arrow = element.querySelector('.toggle-arrow');
+    
+    if (targetList) {
+        if (targetList.style.display === 'none') {
+            targetList.style.display = 'block';
+            if (arrow) arrow.textContent = '▼';
+        } else {
+            targetList.style.display = 'none';
+            if (arrow) arrow.textContent = '▶';
+        }
+    }
+}
