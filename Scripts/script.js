@@ -5,53 +5,45 @@ let currentStepTarget = null;
 let stagedTrialsArray = []; 
 let activeBulletPointsArr = []; 
 let stagedPdfData = null; // Caches Base64 file data strings securely
+let stagedPdfPath = null; // Fix: Tracks and preserves disk paths for imported files
 let editingStepNumber = null; 
 let editingTrialIndex = null; 
 let editingBulletIndex = null; 
 
-document.addEventListener("DOMContentLoaded", () => {
-    let protocolPath = 'questions.txt'; 
-    
-    if (window.location.pathname.includes('/Templates/')) {
-        protocolPath = '../Scripts/questions.txt';
-    } else if (window.location.protocol === 'file:') {
-        protocolPath = '../Scripts/questions.txt';
-    }
-    
-    fetch(protocolPath)
-        .then(response => {
-            if (!response.ok) {
-                return fetch('../Scripts/questions.txt');
+document.addEventListener("DOMContentLoaded", async () => {
+    // FIX 1: Always wire up event listeners first so early returns don't break buttons
+    document.getElementById('pdfUpload')?.addEventListener('change', handlePdfUpload);
+    document.getElementById('importTxtInput')?.addEventListener('change', handleTxtImport);
+
+    try {
+        // Attempt to load from the writable userData folder via the backend
+        if (window.electronAPI && window.electronAPI.readData) {
+            const savedData = await window.electronAPI.readData();
+            if (savedData) {
+                QUESTIONS_CONFIG = savedData;
+                buildWorkflowUI();
+                return; // Successfully loaded from persistent storage
             }
-            return response;
-        })
-        .then(response => {
-            if (!response.ok) throw new Error("Could not find configuration registry database.");
-            return response.json();
-        })
-        .then(data => {
-            QUESTIONS_CONFIG = data;
-            buildWorkflowUI();
-        })
-        .catch(err => {
-            console.error("Fetch Error details:", err);
-            alert("Database Error: Cannot locate or load 'questions.txt'. Ensure the file exists inside your hhsApp/Scripts/ folder!");
-        });
-
-    // Wire up file selectors on load
-    const pdfUploadInput = document.getElementById('pdfUpload');
-    if (pdfUploadInput) {
-        pdfUploadInput.addEventListener('change', handlePdfUpload);
-    }
-
-    const importTxtInput = document.getElementById('importTxtInput');
-    if (importTxtInput) {
-        importTxtInput.addEventListener('change', handleTxtImport);
+        }
+        
+        // Fallback: If no saved data found in userData, use the original fetch
+        let protocolPath = 'questions.txt'; 
+        if (window.location.pathname.includes('/Templates/')) protocolPath = '../Scripts/questions.txt';
+        
+        const response = await fetch(protocolPath);
+        if (!response.ok) throw new Error("Could not find configuration registry database.");
+        QUESTIONS_CONFIG = await response.json();
+        buildWorkflowUI();
+        
+    } catch (err) {
+        console.error("Initialization Error:", err);
+        alert("Database Error: Could not locate configuration data.");
     }
 });
 
 function buildWorkflowUI() {
     const container = document.getElementById("dynamicQuestionsContainer");
+    if (!container) return;
     container.innerHTML = ""; 
     
     QUESTIONS_CONFIG.sort((a, b) => a.step - b.step);
@@ -82,29 +74,42 @@ function buildWorkflowUI() {
 }
 
 function handleUnifiedAddStepClick() {
-    if (QUESTIONS_CONFIG.length === 0) {
-        openControlPage(false);
-        return;
-    }
-    const nextEndStepNum = QUESTIONS_CONFIG[QUESTIONS_CONFIG.length - 1].step + 1;
+    console.log("Add Step button clicked. Preparing to prompt user for insertion position.");
+    // 1. Ensure QUESTIONS_CONFIG is treated as an array even if something went wrong
+    const config = Array.isArray(QUESTIONS_CONFIG) ? QUESTIONS_CONFIG : [];
+    
+    // 2. Safely calculate the next available step number
+    const lastStep = config.length > 0 ? config[config.length - 1].step : 0;
+    const nextEndStepNum = lastStep + 1;
+
+    // 3. Prompt user for position
     const choice = prompt(
         `Where would you like to place this new step?\n\n` +
         `• Press ENTER or type "${nextEndStepNum}" to add it to the VERY END.\n` +
-        `• Type any number between 1 and ${QUESTIONS_CONFIG.length} to INSERT it in-between existing steps.`
+        `• Type any number between 1 and ${nextEndStepNum} to INSERT it in-between existing steps.`
     );
-    if (choice === null) return; 
+
+    if (choice === null) return; // User pressed Cancel
+
     const cleanChoice = choice.trim();
     if (cleanChoice === "") {
-        openControlPage(false);
+        // Default to adding to the end if empty
+        openControlPage(false, null, nextEndStepNum);
         return;
     }
+
     const targetPos = parseInt(cleanChoice);
+    
+    // 4. Validate the input
     if (isNaN(targetPos) || targetPos < 1 || targetPos > nextEndStepNum) {
         alert("Invalid step position selected. Action cancelled.");
         return;
     }
+
+    // 5. Navigate to the Creator View with the calculated position
+    // If the user picked the last step, treat it as a standard "Add to end"
     if (targetPos === nextEndStepNum) {
-        openControlPage(false);
+        openControlPage(false, null, null); 
     } else {
         openControlPage(false, null, targetPos);
     }
@@ -152,7 +157,6 @@ function displayTrialPayload(trialsArray, nextStepPointer) {
     currentStepTarget = nextStepPointer;
     badge.textContent = `${trialsArray ? trialsArray.length : 0} Target Trial Match(es)`;
 
-    // Cache match objects into global scope for references
     window.activeMatchesRuntimeCache = trialsArray || [];
 
     if(!trialsArray || trialsArray.length === 0) {
@@ -172,7 +176,7 @@ function displayTrialPayload(trialsArray, nextStepPointer) {
                     </ul>
                 ` : ''}
 
-                ${trial.pdfData ? `
+                ${(trial.pdfData || trial.pdfPath) ? `
                     <div class="pdf-action-block" style="margin-top: 12px; border-top: 1px dashed #cbd5e1; padding-top: 10px;">
                         <button type="button" class="ctrl-btn" style="background: #2563eb; color: white; padding: 8px 14px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;" onclick="openFullscreenPdfViewer(${index})">
                             📄 View Full Screen Protocol Document
@@ -187,19 +191,34 @@ function displayTrialPayload(trialsArray, nextStepPointer) {
 }
 
 // Overlay Framework Handlers
-window.openFullscreenPdfViewer = function(cachedIndex) {
+window.openFullscreenPdfViewer = async function(cachedIndex) {
     const trialObj = window.activeMatchesRuntimeCache ? window.activeMatchesRuntimeCache[cachedIndex] : null;
-    if (!trialObj || !trialObj.pdfData) {
-        alert("Execution Error: No protocol asset string mapped for this entry reference.");
+    
+    if (!trialObj || (!trialObj.pdfData && !trialObj.pdfPath)) {
+        alert("Execution Error: No protocol asset mapped for this entry.");
         return;
     }
+
     const overlay = document.getElementById('fullscreenPdfOverlay');
     const frame = document.getElementById('fullscreenPdfFrame');
     const titleLabel = document.getElementById('fullscreenPdfTitle');
     
     if (overlay && frame && titleLabel) {
         titleLabel.textContent = `Protocol Reference Map — ${trialObj.name}`;
-        frame.src = trialObj.pdfData;
+        
+        if (trialObj.pdfPath) {
+            const result = await window.electronAPI.readPdfFile(trialObj.pdfPath);
+            if (result.success) {
+                // FIX 2: Render backend data directly into iframe src instead of attempting broken frontend Buffer transformations
+                frame.src = result.data; 
+            } else {
+                alert("Error loading PDF file: " + result.error);
+                return;
+            }
+        } else {
+            frame.src = trialObj.pdfData;
+        }
+        
         overlay.style.display = 'flex';
     }
 };
@@ -268,6 +287,7 @@ function closeControlPage() {
     stagedTrialsArray = [];
     activeBulletPointsArr = [];
     stagedPdfData = null;
+    stagedPdfPath = null;
     editingStepNumber = null;
     editingTrialIndex = null;
     editingBulletIndex = null;
@@ -293,6 +313,7 @@ function addBulletPointToDraft() {
 
 function renderBulletDraftPreview() {
     const container = document.getElementById('bulletPreviewList');
+    if (!container) return;
     container.innerHTML = activeBulletPointsArr.map((str, index) => `
         <li style="display:flex; justify-content:space-between; align-items:center; background:#ffffff; border:1px solid #e2e8f0; padding:6px 10px; margin-bottom:4px; border-radius:4px;">
             <span style="font-size:13px; color:#334155;">&bull; ${str}</span>
@@ -307,9 +328,11 @@ function renderBulletDraftPreview() {
 function editDraftBullet(index) {
     editingBulletIndex = index;
     const field = document.getElementById('bulletInput');
-    field.value = activeBulletPointsArr[index];
-    document.querySelector('.add-bullet-btn').textContent = "💾 Save Bullet";
-    field.focus();
+    if (field) {
+        field.value = activeBulletPointsArr[index];
+        document.querySelector('.add-bullet-btn').textContent = "💾 Save Bullet";
+        field.focus();
+    }
 }
 
 function removeDraftBullet(index) {
@@ -338,16 +361,27 @@ function editOptionFromStepQueue(index) {
     activeBulletPointsArr = trial.criteria ? [...trial.criteria] : [];
     renderBulletDraftPreview();
 
+    // FIX 3: Cache and resolve files safely from base64 data OR mapped physical file system paths
     stagedPdfData = trial.pdfData || null;
+    stagedPdfPath = trial.pdfPath || null;
+    
     const pdfViewer = document.getElementById('pdfViewer');
-    if (stagedPdfData && pdfViewer) {
-        pdfViewer.innerHTML = `<iframe src="${stagedPdfData}" style="width: 100%; height: 300px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
-        document.getElementById('contentModeSwitcher').value = 'pdf';
-    } else {
-        document.getElementById('contentModeSwitcher').value = 'bullets';
+    if (pdfViewer) {
+        if (stagedPdfData) {
+            pdfViewer.innerHTML = `<iframe src="${stagedPdfData}" style="width: 100%; height: 300px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
+            document.getElementById('contentModeSwitcher').value = 'pdf';
+        } else if (stagedPdfPath) {
+            window.electronAPI.readPdfFile(stagedPdfPath).then(result => {
+                if (result.success && document.getElementById('pdfViewer')) {
+                    document.getElementById('pdfViewer').innerHTML = `<iframe src="${result.data}" style="width: 100%; height: 300px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
+                }
+            });
+            document.getElementById('contentModeSwitcher').value = 'pdf';
+        } else {
+            document.getElementById('contentModeSwitcher').value = 'bullets';
+        }
     }
     toggleContentMode();
-    
     document.getElementById('trialDraftingCard').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -361,12 +395,14 @@ function commitOptionToStepQueue() {
         return;
     }
 
+    // FIX 4: Explicitly preserve trial.pdfPath so editing imported data doesn't wipe out files
     const compiledTrialPayload = {
         name: name,
         contact: contact,
         desc: desc,
         criteria: [...activeBulletPointsArr],
-        pdfData: stagedPdfData
+        pdfData: stagedPdfData,
+        pdfPath: stagedPdfPath
     };
 
     if (editingTrialIndex !== null) {
@@ -379,8 +415,10 @@ function commitOptionToStepQueue() {
     renderQueuedTrialsList();
 }
 
+// FIX 5: Unified, cleanly combined render function featuring toggleable criteria maps
 function renderQueuedTrialsList() {
     const container = document.getElementById('queuedTrialsContainer');
+    if (!container) return;
     if (stagedTrialsArray.length === 0) {
         container.innerHTML = `<p class="empty-state-text">No trial allocation options attached to this step yet.</p>`;
         return;
@@ -391,9 +429,14 @@ function renderQueuedTrialsList() {
             <div class="queued-item-meta">
                 <strong>${trial.name}</strong> <span style="color:#64748b; font-size:12px;">(${trial.contact})</span>
                 <div style="font-size:12px; color:#475569; margin-top:2px;">${trial.desc}</div>
-                <div style="font-size:11px; color:#3b82f6; margin-top:2px;">
-                    ${trial.pdfData ? '📄 Linked directly to internal reference protocol document.' : `• Includes ${trial.criteria ? trial.criteria.length : 0} criteria items.`}
+                
+                <div style="font-size:11px; color:#3b82f6; margin-top:4px; cursor:pointer; user-select:none; display:inline-block; font-weight:500;" onclick="toggleInlineCriteria(this, ${index})">
+                    • Includes ${trial.criteria ? trial.criteria.length : 0} inclusion bullet points <span class="toggle-arrow" style="font-size:9px; vertical-align:middle; margin-left:2px;">▶</span>
                 </div>
+                
+                <ul id="inline-criteria-${index}" style="display:none; margin-top:6px; margin-bottom:6px; padding-left:20px; font-size:12px; color:#475569; list-style-type:disc; line-height:1.4;">
+                    ${(trial.criteria || []).map(c => `<li style="margin-bottom:2px;">${c}</li>`).join('')}
+                </ul>
             </div>
             <div class="queued-item-control-buttons">
                 <button type="button" class="edit-option-inline-btn" onclick="editOptionFromStepQueue(${index})">✏️ Edit Option</button>
@@ -421,6 +464,7 @@ function clearDraftOptionForm() {
     
     activeBulletPointsArr = [];
     stagedPdfData = null;
+    stagedPdfPath = null;
     editingTrialIndex = null;
     editingBulletIndex = null;
     document.getElementById('bulletPreviewList').innerHTML = "";
@@ -459,9 +503,7 @@ function saveNewStepAndReturn() {
         }
     } else if (isInsertion) {
         QUESTIONS_CONFIG.forEach(q => {
-            if (q.step >= computedStep) {
-                q.step += 1;
-            }
+            if (q.step >= computedStep) q.step += 1;
         });
         QUESTIONS_CONFIG.push({ step: computedStep, title, prompt, ifNoGoToStep: null, trials: [...stagedTrialsArray] });
     } else {
@@ -509,7 +551,6 @@ function downloadTxtFile() {
     downloadAnchor.remove();
 }
 
-// 📂 TEXT FILE METADATA IMPORT INTERCEPTOR ENGINE
 function triggerTxtImport() {
     document.getElementById('importTxtInput').click();
 }
@@ -522,40 +563,39 @@ function handleTxtImport(event) {
     reader.onload = function(e) {
         try {
             const importedPayload = JSON.parse(e.target.result);
-            if (!Array.isArray(importedPayload)) {
-                throw new Error("Target payload structural matrix must be formatted as an array list sequence.");
-            }
-
-            // Bind parsed dataset structure directly into global context schema configuration
+            
+            // 1. Force a clean state reset
             QUESTIONS_CONFIG = importedPayload;
             QUESTIONS_CONFIG.sort((a, b) => a.step - b.step);
-
-            // Re-sequence structural flow pointers safely
-            QUESTIONS_CONFIG.forEach((q, idx) => {
-                q.ifNoGoToStep = (idx < QUESTIONS_CONFIG.length - 1) ? (QUESTIONS_CONFIG[idx + 1].step) : null;
-            });
-
+            
+            editingStepNumber = null; // Clear any stale edit locks
+            stagedTrialsArray = [];
+            
+            // 2. Refresh the UI and Persistence
             commitDatabaseChangesToDisk();
             buildWorkflowUI();
-            hideResultsPanel();
             
-            alert("📂 Configuration File Successfully Imported! Your screening workflow has been refreshed.");
+            // 3. Explicitly unlock the input focus
+            setTimeout(() => {
+                window.focus();
+                document.body.focus();
+            }, 100);
+            
         } catch (err) {
-            console.error("Import failure execution route trace logic exception:", err);
-            alert("Import Failure: Invalid text dataset format. Please ensure that you select a valid configuration text file exported from this workflow app.");
+            alert("Import Failed: Invalid JSON format.");
         }
-        // Flush structural input state reference to allow re-selection
-        event.target.value = "";
     };
     reader.readAsText(file);
 }
 
 function advanceWorkflow() { if (currentStepTarget) activateStepCard(currentStepTarget); hideResultsPanel(); }
+
 function activateStepCard(stepId) {
     document.querySelectorAll('.step-card').forEach(c => c.classList.remove('active-card'));
     const targetCard = document.getElementById(`cardStep-${stepId}`);
     if (targetCard) { targetCard.classList.remove('hidden'); targetCard.classList.add('active-card'); }
 }
+
 function clearDownstreamCards(fromStepNum) {
     QUESTIONS_CONFIG.forEach(q => {
         if (q.step > fromStepNum) {
@@ -569,6 +609,7 @@ function clearDownstreamCards(fromStepNum) {
     });
     hideResultsPanel();
 }
+
 function hideResultsPanel() { document.getElementById('cardResults').classList.add('hidden'); }
 function resetWorkflowEngine() { buildWorkflowUI(); hideResultsPanel(); }
 
@@ -588,47 +629,28 @@ function toggleContentMode() {
 
 function handlePdfUpload(event) {
     const file = event.target.files[0];
-    if (!file || file.type !== 'application/pdf') return;
+    if (!file) return;
+    
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        alert("Please select a valid PDF file.");
+        return;
+    }
+
+    const pdfViewer = document.getElementById('pdfViewer');
+    if (pdfViewer) {
+        // Fix: Leverage lightning fast sandboxed blob URLs to bypass data size limitations in local UI frames
+        const previewUrl = URL.createObjectURL(file);
+        pdfViewer.innerHTML = `<iframe src="${previewUrl}" style="width: 100%; height: 350px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
+    }
 
     const reader = new FileReader();
     reader.onload = function(e) {
         stagedPdfData = e.target.result;
-        const pdfViewer = document.getElementById('pdfViewer');
-        if (pdfViewer) {
-            pdfViewer.innerHTML = `<iframe src="${stagedPdfData}" style="width: 100%; height: 350px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
-        }
+        stagedPdfPath = null; 
     };
     reader.readAsDataURL(file);
 }
-function renderQueuedTrialsList() {
-    const container = document.getElementById('queuedTrialsContainer');
-    if (stagedTrialsArray.length === 0) {
-        container.innerHTML = `<p class="empty-state-text">No trial allocation options attached to this step yet.</p>`;
-        return;
-    }
 
-    container.innerHTML = stagedTrialsArray.map((trial, index) => `
-        <div class="queued-trial-item-row">
-            <div class="queued-item-meta">
-                <strong>${trial.name}</strong> <span style="color:#64748b; font-size:12px;">(${trial.contact})</span>
-                <div style="font-size:12px; color:#475569; margin-top:2px;">${trial.desc}</div>
-                
-                <div style="font-size:11px; color:#3b82f6; margin-top:4px; cursor:pointer; user-select:none; display:inline-block; font-weight:500;" onclick="toggleInlineCriteria(this, ${index})">
-                    • Includes ${(trial.criteria || []).length} inclusion bullet points <span class="toggle-arrow" style="font-size:9px; vertical-align:middle; margin-left:2px;">▶</span>
-                </div>
-                
-                <ul id="inline-criteria-${index}" style="display:none; margin-top:6px; margin-bottom:6px; padding-left:20px; font-size:12px; color:#475569; list-style-type:disc; line-height:1.4;">
-                    ${(trial.criteria || []).map(c => `<li style="margin-bottom:2px;">${c}</li>`).join('')}
-                </ul>
-            </div>
-            <div class="queued-item-control-buttons">
-                <button type="button" class="edit-option-inline-btn" onclick="editOptionFromStepQueue(${index})">✏️ Edit Option</button>
-                <button type="button" class="remove-option-from-queue-btn" onclick="removeOptionFromStepQueue(${index})">Remove</button>
-            </div>
-        </div>
-    `).join('');
-    
-}
 function toggleInlineCriteria(element, index) {
     const targetList = document.getElementById(`inline-criteria-${index}`);
     const arrow = element.querySelector('.toggle-arrow');
@@ -640,6 +662,35 @@ function toggleInlineCriteria(element, index) {
         } else {
             targetList.style.display = 'none';
             if (arrow) arrow.textContent = '▶';
+        }
+    }
+}
+function handleUnifiedAddStepClick() {
+    // Simply display the hidden modal
+    document.getElementById('addStepModal').classList.remove('hidden');
+}
+
+function closeCustomPrompt() {
+    document.getElementById('addStepModal').classList.add('hidden');
+    document.getElementById('stepInput').value = ""; // Clear for next time
+}
+
+function submitCustomPrompt() {
+    const val = document.getElementById('stepInput').value;
+    const config = Array.isArray(QUESTIONS_CONFIG) ? QUESTIONS_CONFIG : [];
+    const nextEndStepNum = config.length > 0 ? config[config.length - 1].step + 1 : 1;
+    
+    closeCustomPrompt();
+    
+    // Process the input as you did before
+    if (val === "" || parseInt(val) === nextEndStepNum) {
+        openControlPage(false, null, null); // Add to end
+    } else {
+        const targetPos = parseInt(val);
+        if (isNaN(targetPos) || targetPos < 1 || targetPos > nextEndStepNum) {
+            alert("Invalid step position selected.");
+        } else {
+            openControlPage(false, null, targetPos); // Insert at position
         }
     }
 }

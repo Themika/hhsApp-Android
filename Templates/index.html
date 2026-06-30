@@ -22,6 +22,17 @@
                 <button type="button" class="ctrl-btn add-trigger" onclick="handleUnifiedAddStepClick()">➕ Add Step</button>
             </div>
         </header>
+        <div id="addStepModal" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; z-index:9999;">
+            <div style="background:white; padding:25px; border-radius:8px; width:350px; box-shadow:0 4px 6px rgba(0,0,0,0.1);">
+                <h3>Select Step Position</h3>
+                <p>Enter the step number to insert at (or leave blank to add to the end):</p>
+                <input type="number" id="stepInput" placeholder="e.g. 2" style="width:100%; padding:8px; margin-bottom:15px; box-sizing:border-box;">
+                <div style="display:flex; gap:10px;">
+                    <button onclick="submitCustomPrompt()" style="padding:8px 16px;">OK</button>
+                    <button onclick="closeCustomPrompt()" style="padding:8px 16px;">Cancel</button>
+                </div>
+            </div>
+        </div>
 
         <main class="dash-content" id="dynamicQuestionsContainer">
             </main>
@@ -125,7 +136,7 @@
                         <div id="pdfModeContainer" class="mode-container hidden">
                             <div class="form-group full-width">
                                 <label for="pdfUpload" style="display: block; margin-bottom: 6px; font-weight: 600; color: #334155;">Upload Reference Protocol (PDF)</label>
-                                <input type="file" id="pdfUpload" accept="application/pdf" style="display: block; margin-bottom: 10px;">
+                                <input type="file" id="pdfUpload" accept="application/pdf" multiple class="form-input" style="display: block; margin-bottom: 10px;">
                                 <div id="pdfViewer" style="margin-top: 15px; border: 2px dashed #cbd5e1; padding: 10px; background: #f8fafc; min-height: 200px; border-radius: 6px;">
                                     <p style="color: #64748b; text-align: center; padding-top: 80px;">No document uploaded yet. Select a PDF file above to load the internal workflow previewer.</p>
                                 </div>
@@ -143,7 +154,6 @@
             </div>
         </main>
     </div>
-
     <div id="fullscreenPdfOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center; padding: 25px; box-sizing: border-box;">
         <div style="background: white; width: 100%; height: 100%; max-width: 1500px; max-height: 900px; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.35);">
             <header style="padding: 15px 25px; background: #1e3a8a; color: white; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e40af;">

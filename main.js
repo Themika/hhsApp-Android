@@ -1,82 +1,66 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const userDataPath = app.getPath('userData'); // This is the writable location
-if (process.env.NODE_ENV === 'development') {
-  autoUpdater.forceDevUpdateConfig = true;
-}
+const fsPromises = require('fs').promises; // Use promises for non-blocking I/O
+const userDataPath = app.getPath('userData');
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 850,
+    width: 1200, height: 850,
     webPreferences: {
-      nodeIntegration: false,    
+      nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js') ,
-      contextIsolation: true,                     
-      nodeIntegration: false
+      preload: path.join(__dirname, 'preload.js'),
+      plugins: true 
     }
   });
-
   mainWindow.loadFile(path.join(__dirname, 'Templates/index.html'));
 }
+app.whenReady().then(createWindow);
 
-
-app.whenReady().then(() => {
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+// READ HANDLER - Updated to async[cite: 7]
+ipcMain.handle('read-database-file', async () => {
+  try {
+    const targetPath = path.join(userDataPath, 'questions.txt');
+    if (!fs.existsSync(targetPath)) return null;
+    const data = await fsPromises.readFile(targetPath, 'utf8'); // Non-blocking read[cite: 7]
+    return JSON.parse(data);
+  } catch (error) { return null; }
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+// SAVE HANDLER - Updated to async[cite: 7]
 ipcMain.handle('save-database-file', async (event, rawData) => {
   try {
     const uploadDir = path.join(userDataPath, 'uploads');
-    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-    // Dynamic Safe Parse: handles either raw array mutations or pre-stringified blocks smoothly
     let questionsArray = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
-
+    
+    // Process PDF paths
     if (Array.isArray(questionsArray)) {
       questionsArray.forEach(step => {
-        if (step.trials && Array.isArray(step.trials)) {
-          step.trials.forEach(trial => {
-            if (trial.contentType === 'pdf' && trial.localPdfPath) {
-              const fileName = path.basename(trial.localPdfPath);
-              const destination = path.join(uploadDir, fileName);
-              
-              // Physically archive file to persistent local storage folder
-              fs.copyFileSync(trial.localPdfPath, destination);
-              
-              trial.pdfPath = destination; // Track the new absolute path location
-              delete trial.localPdfPath;   // Drop temporary staging memory handle
-            }
-          });
-        }
+        if (step.trials) step.trials.forEach(trial => {
+          if (trial.contentType === 'pdf' && trial.localPdfPath) {
+            const dest = path.join(uploadDir, path.basename(trial.localPdfPath));
+            fs.copyFileSync(trial.localPdfPath, dest);
+            trial.pdfPath = dest;
+            delete trial.localPdfPath;
+          }
+        });
       });
     }
 
-    const targetPath = fs.existsSync(path.join(userDataPath, 'Scripts'))
-      ? path.join(userDataPath, 'Scripts', 'questions.txt')
-      : path.join(userDataPath, 'questions.txt');
-
-    // FIX: Stringify the array safely right before writing to native fs disk layers
-    const serializedOutput = JSON.stringify(questionsArray, null, 2);
-    fs.writeFileSync(targetPath, serializedOutput);
+    // Non-blocking write[cite: 7]
+    await fsPromises.writeFile(path.join(userDataPath, 'questions.txt'), JSON.stringify(questionsArray, null, 2));
     return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  } catch (error) { return { success: false, error: error.message }; }
 });
 
+// PDF READ HANDLER
 ipcMain.handle('read-pdf-file', async (event, filePath) => {
   try {
-    const buffer = fs.readFileSync(filePath);
-    return { success: true, data: buffer };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+    const buffer = await fsPromises.readFile(filePath); // Non-blocking read[cite: 7]
+    const base64Data = buffer.toString('base64');
+    return { success: true, data: base64Data };
+  } catch (error) { return { success: false, error: error.message }; }
 });
