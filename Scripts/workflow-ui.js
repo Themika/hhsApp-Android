@@ -42,17 +42,9 @@ function buildWorkflowUI() {
 }
 
 function handleUnifiedAddStepClick() {
-    // window.prompt() is not implemented in Electron's renderer, so we build
-    // a small position-picker ourselves instead of relying on the app's
-    // pre-existing addStepModal — that modal was never actually wired to
-    // any button before (Add Step always used prompt()), so its markup/CSS
-    // is untested and was very likely leaving an invisible overlay behind
-    // that blocked typing in the editor panel underneath it.
     const config = Array.isArray(QUESTIONS_CONFIG) ? QUESTIONS_CONFIG : [];
     const lastStep = config.length > 0 ? config[config.length - 1].step : 0;
     const nextEndStepNum = lastStep + 1;
-
-    console.log("[HHS DEBUG] handleUnifiedAddStepClick:openingPicker", { nextEndStepNum });
 
     showAddStepPositionPicker(nextEndStepNum, (targetPos) => {
         if (targetPos === null) return; // cancelled
@@ -65,7 +57,6 @@ function handleUnifiedAddStepClick() {
 }
 
 function showAddStepPositionPicker(nextEndStepNum, onSubmit) {
-    // Remove any stray leftover picker first, just in case.
     document.getElementById('hhsAddStepPicker')?.remove();
 
     const overlay = document.createElement('div');
@@ -133,6 +124,7 @@ function deleteExistingStep(stepNum) {
     });
     commitDatabaseChangesToDisk();
     buildWorkflowUI();
+    window.location.reload();
 }
 
 function processChoice(stepNum, isYes) {
@@ -204,14 +196,12 @@ function displayTrialPayload(trialsArray, nextStepPointer) {
 function advanceWorkflow() { if (currentStepTarget) activateStepCard(currentStepTarget); hideResultsPanel(); }
 
 function activateStepCard(stepId) {
-    console.log('[HHS DEBUG] activateStepCard', { stepId });
     document.querySelectorAll('.step-card').forEach(c => c.classList.remove('active-card'));
     const targetCard = document.getElementById(`cardStep-${stepId}`);
     if (targetCard) { targetCard.classList.remove('hidden'); targetCard.classList.add('active-card'); }
 }
 
 function clearDownstreamCards(fromStepNum) {
-    console.log('[HHS DEBUG] clearDownstreamCards', { fromStepNum });
     QUESTIONS_CONFIG.forEach(q => {
         if (q.step > fromStepNum) {
             const card = document.getElementById(`cardStep-${q.step}`);
@@ -226,12 +216,10 @@ function clearDownstreamCards(fromStepNum) {
 }
 
 function hideResultsPanel() {
-    console.log('[HHS DEBUG] hideResultsPanel');
     document.getElementById('cardResults').classList.add('hidden');
 }
 
 function resetWorkflowEngine() {
-    console.log('[HHS DEBUG] resetWorkflowEngine');
     buildWorkflowUI();
     hideResultsPanel();
 }

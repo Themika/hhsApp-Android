@@ -57,7 +57,23 @@ let __hhsImportInProgress = false;
 async function triggerTxtImport() {
     // 1. Existing Electron Support
     if (window.electronAPI && window.electronAPI.pickTxtImportFile) {
-        // ... (Keep your existing electronAPI logic here)
+        try {
+            const result = await window.electronAPI.pickTxtImportFile();
+            
+            // Stop if the user cancelled the file dialog
+            if (result.canceled) return;
+            
+            // Show error if something went wrong in main.js
+            if (!result.success) {
+                alert("Error importing: " + result.error);
+                return;
+            }
+            
+            // Successfully retrieved data; apply it
+            applyImportedTxtPayload(result.data, result.filePath);
+        } catch (err) {
+            alert("Unexpected error during import: " + err.message);
+        }
         return;
     }
 
@@ -84,7 +100,6 @@ async function triggerTxtImport() {
         document.getElementById('importTxtInput').click();
     }
 }
-
 // In storage-tools.js, update your applyImportedTxtPayload
 function applyImportedTxtPayload(jsonString, filePath) {
     const importedData = JSON.parse(jsonString);
@@ -102,7 +117,8 @@ function applyImportedTxtPayload(jsonString, filePath) {
     // Ensure the editor view is cleared so it doesn't hold onto stale "draft" data
     closeControlPage(); 
     
-    alert("✅ Data imported successfully.\n\nPlease close and relaunch the app for the imported changes to be fully editable.");
+    alert("✅ Data imported successfully");
+    window.location.reload();
 }
 
 function handleTxtImport(event) {
