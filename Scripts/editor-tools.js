@@ -336,10 +336,9 @@ function editOptionFromStepQueue(index) {
 }
 
 function commitOptionToStepQueue() {
-    const name = document.getElementById('tName').value.trim();
+    const name = document.getElementById('tName').value.trim() || "Unknown Trial Program Name";
     const contact = document.getElementById('tContact').value.trim() || "N/A";
     const desc = document.getElementById('tDesc').value.trim() || "No descriptive notes recorded.";
-
     console.log('[HHS DEBUG] commitOptionToStepQueue:start', {
         editingTrialIndex,
         name,
