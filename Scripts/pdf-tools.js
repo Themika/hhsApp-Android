@@ -1,7 +1,7 @@
-window.openFullscreenPdfViewer = async function(cachedIndex) {
+window.openFullscreenPdfViewer = function(cachedIndex) {
     const trialObj = window.activeMatchesRuntimeCache ? window.activeMatchesRuntimeCache[cachedIndex] : null;
 
-    if (!trialObj || (!trialObj.pdfData && !trialObj.pdfPath)) {
+    if (!trialObj || !trialObj.pdfData) {
         alert("Execution Error: No protocol asset mapped for this entry.");
         return;
     }
@@ -12,19 +12,7 @@ window.openFullscreenPdfViewer = async function(cachedIndex) {
 
     if (overlay && frame && titleLabel) {
         titleLabel.textContent = `Protocol Reference Map — ${trialObj.name}`;
-
-        if (trialObj.pdfPath) {
-            const result = await window.electronAPI.readPdfFile(trialObj.pdfPath);
-            if (result.success) {
-                frame.src = result.data;
-            } else {
-                alert("Error loading PDF file: " + result.error);
-                return;
-            }
-        } else {
-            frame.src = trialObj.pdfData;
-        }
-
+        frame.src = trialObj.pdfData;
         overlay.style.display = 'flex';
     }
 };

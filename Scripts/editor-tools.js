@@ -190,36 +190,12 @@ function openControlPage(isEditMode = false, targetStepId = null, insertionPosit
 
     renderQueuedTrialsList();
 
-    // FOCUS TARGET DEBUGGING
+    // FOCUS TARGET
     const initialField = document.getElementById('newTitle') || document.getElementById('tName');
-    
-    if (initialField) {
-        // Send status to VS Code terminal
-        if (window.electronAPI?.send) {
-            window.electronAPI.send('hhs-focus-log', {
-                timestamp: new Date().toISOString(),
-                target: initialField.id,
-                activeElement: document.activeElement?.id || 'none',
-                isFocused: document.activeElement === initialField
-            });
-        }
 
+    if (initialField) {
         placeCaretAtEnd(initialField);
-        
-        window.setTimeout(() => {
-            focusEditorTextField(initialField.id);
-            
-            // Send final status to VS Code terminal
-            if (window.electronAPI?.send) {
-                window.electronAPI.send('hhs-focus-log', {
-                    timestamp: new Date().toISOString(),
-                    event: 'AFTER_TIMEOUT',
-                    target: initialField.id,
-                    activeElement: document.activeElement?.id || 'none',
-                    isFocused: document.activeElement === initialField
-                });
-            }
-        }, 250);
+        window.setTimeout(() => focusEditorTextField(initialField.id), 250);
     }
 }
 
@@ -233,7 +209,6 @@ function closeControlPage() {
     stagedTrialsArray = [];
     activeBulletPointsArr = [];
     stagedPdfData = null;
-    stagedPdfPath = null;
     editingStepNumber = null;
     editingTrialIndex = null;
     editingBulletIndex = null;
@@ -313,19 +288,11 @@ function editOptionFromStepQueue(index) {
     renderBulletDraftPreview();
 
     stagedPdfData = trial.pdfData || null;
-    stagedPdfPath = trial.pdfPath || null;
 
     const pdfViewer = document.getElementById('pdfViewer');
     if (pdfViewer) {
         if (stagedPdfData) {
             pdfViewer.innerHTML = `<iframe src="${stagedPdfData}" style="width: 100%; height: 300px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
-            document.getElementById('contentModeSwitcher').value = 'pdf';
-        } else if (stagedPdfPath) {
-            window.electronAPI.readPdfFile(stagedPdfPath).then(result => {
-                if (result.success && document.getElementById('pdfViewer')) {
-                    document.getElementById('pdfViewer').innerHTML = `<iframe src="${result.data}" style="width: 100%; height: 300px; border: 1px solid #cbd5e1; border-radius: 4px;"></iframe>`;
-                }
-            });
             document.getElementById('contentModeSwitcher').value = 'pdf';
         } else {
             document.getElementById('contentModeSwitcher').value = 'bullets';
@@ -345,8 +312,7 @@ function commitOptionToStepQueue() {
         contact,
         desc,
         bulletCount: activeBulletPointsArr.length,
-        hasPdfData: !!stagedPdfData,
-        hasPdfPath: !!stagedPdfPath
+        hasPdfData: !!stagedPdfData
     });
 
     if (!name) {
@@ -359,8 +325,7 @@ function commitOptionToStepQueue() {
         contact: contact,
         desc: desc,
         criteria: [...activeBulletPointsArr],
-        pdfData: stagedPdfData,
-        pdfPath: stagedPdfPath
+        pdfData: stagedPdfData
     };
 
     if (editingTrialIndex !== null) {
@@ -421,8 +386,7 @@ function clearDraftOptionForm() {
         editingBulletIndex,
         stagedTrialsCount: stagedTrialsArray.length,
         activeBulletPointsCount: activeBulletPointsArr.length,
-        stagedPdfData: !!stagedPdfData,
-        stagedPdfPath: !!stagedPdfPath
+        stagedPdfData: !!stagedPdfData
     });
     document.getElementById('tName').value = "";
     document.getElementById('tContact').value = "";
@@ -433,7 +397,6 @@ function clearDraftOptionForm() {
 
     activeBulletPointsArr = [];
     stagedPdfData = null;
-    stagedPdfPath = null;
     editingTrialIndex = null;
     editingBulletIndex = null;
     document.getElementById('bulletPreviewList').innerHTML = "";
@@ -574,7 +537,6 @@ function handlePdfUpload(event) {
     const reader = new FileReader();
     reader.onload = function(e) {
         stagedPdfData = e.target.result;
-        stagedPdfPath = null;
     };
     reader.readAsDataURL(file);
 }

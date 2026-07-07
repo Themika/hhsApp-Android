@@ -1,43 +1,99 @@
-let currentFileHandle = null; // Stores the file handle for "Pro" saving
+let currentFileHandle = null; // Browser-only "Pro" save target (File System Access API)
 
 function logImportDebug(stage, details = {}) {
     console.log(`[HHS DEBUG] ${stage}`, details);
 }
 
+// Silent autosave — called after every mutation (import, add step, delete
+// step, save/update step). Never opens a share sheet or a save dialog.
+// On the native app it writes straight to the app's private storage via
+// Capacitor Filesystem. In a plain browser (dev/testing) it falls back to
+// localStorage so nothing is lost across a reload.
 async function commitDatabaseChangesToDisk() {
     const updatedDataString = JSON.stringify(QUESTIONS_CONFIG, null, 2);
-    
-    // 1. Existing Electron Support
-    if (window.electronAPI && window.electronAPI.saveData) {
-        const result = await window.electronAPI.saveData(updatedDataString);
-        if (result && !result.success) alert("Backend disk write error: " + result.error);
+
+    if (isNativePlatform() && window.Capacitor?.Plugins?.Filesystem) {
+        const { Filesystem } = window.Capacitor.Plugins;
+        try {
+            await Filesystem.writeFile({
+                path: 'questions.txt',
+                directory: 'DATA',
+                data: updatedDataString,
+                encoding: 'utf8'
+            });
+            logImportDebug('commitDatabaseChangesToDisk:savedNative', { directory: 'DATA' });
+        } catch (err) {
+            console.error('Native filesystem save failed:', err);
+        }
         return;
     }
 
-    // 2. "Pro" Web Implementation (File System Access API)
+    // Browser/dev fallback
+    try {
+        localStorage.setItem('hhsQuestionsConfig', updatedDataString);
+        logImportDebug('commitDatabaseChangesToDisk:savedLocalStorage', {});
+    } catch (err) {
+        console.error('localStorage save failed:', err);
+    }
+}
+
+// Explicit export — call this ONLY from a user-clicked "Export"/"Save File"
+// button. On the native app this writes a copy to the device's cache
+// directory and opens the native Share sheet so the user can save it to
+// Files, email it, etc. In a plain browser it downloads a .txt file.
+async function exportDatabaseToFile() {
+    const updatedDataString = JSON.stringify(QUESTIONS_CONFIG, null, 2);
+
+    if (isNativePlatform() && window.Capacitor?.Plugins?.Filesystem) {
+        const { Filesystem, Share } = window.Capacitor.Plugins;
+        try {
+            const written = await Filesystem.writeFile({
+                path: 'questions.txt',
+                directory: 'CACHE',
+                data: updatedDataString,
+                encoding: 'utf8'
+            });
+
+            if (Share) {
+                await Share.share({
+                    title: 'Export Protocol Data',
+                    text: 'HHS protocol data export',
+                    url: written.uri,
+                    dialogTitle: 'Save or send questions.txt'
+                });
+            } else {
+                alert("Exported file saved to app cache (no Share plugin installed to hand it off — run `npm install @capacitor/share && npx cap sync`).");
+            }
+            logImportDebug('exportDatabaseToFile:savedNative', { uri: written.uri });
+        } catch (err) {
+            if (err?.message !== 'Share canceled') {
+                console.error('Export failed:', err);
+                alert("Failed to export file: " + err.message);
+            }
+        }
+        return;
+    }
+
+    // Browser/dev fallback
     if ('showSaveFilePicker' in window) {
         try {
-            // If we don't have a handle, prompt for a save location
             if (!currentFileHandle) {
                 currentFileHandle = await window.showSaveFilePicker({
                     suggestedName: 'questions.txt',
                     types: [{ description: 'JSON File', accept: { 'application/json': ['.txt', '.json'] } }],
                 });
             }
-
-            // Write the data to the handle
             const writable = await currentFileHandle.createWritable();
             await writable.write(updatedDataString);
             await writable.close();
-            logImportDebug('commitDatabaseChangesToDisk:savedNative', { path: currentFileHandle.name });
+            logImportDebug('exportDatabaseToFile:savedNative', { path: currentFileHandle.name });
         } catch (err) {
             if (err.name !== 'AbortError') {
-                console.error('Save failed:', err);
-                alert("Failed to save file: " + err.message);
+                console.error('Export failed:', err);
+                alert("Failed to export file: " + err.message);
             }
         }
     } else {
-        // 3. Fallback for browsers without File System Access API
         downloadTxtFile();
     }
 }
@@ -52,71 +108,30 @@ function downloadTxtFile() {
     downloadAnchor.remove();
 }
 
-let __hhsImportInProgress = false;
-
+// Import — uses a standard HTML file input. This is deliberately kept as
+// the primary (not just fallback) path because it's the one mechanism that
+// reliably triggers the native file/document picker inside a Capacitor
+// WebView on both Android and iOS, no extra plugin required.
 async function triggerTxtImport() {
-    // 1. Existing Electron Support
-    if (window.electronAPI && window.electronAPI.pickTxtImportFile) {
-        try {
-            const result = await window.electronAPI.pickTxtImportFile();
-            
-            // Stop if the user cancelled the file dialog
-            if (result.canceled) return;
-            
-            // Show error if something went wrong in main.js
-            if (!result.success) {
-                alert("Error importing: " + result.error);
-                return;
-            }
-            
-            // Successfully retrieved data; apply it
-            applyImportedTxtPayload(result.data, result.filePath);
-        } catch (err) {
-            alert("Unexpected error during import: " + err.message);
-        }
-        return;
-    }
-
-    // 2. "Pro" Web Implementation
-    if ('showOpenFilePicker' in window) {
-        try {
-            const [handle] = await window.showOpenFilePicker({
-                types: [{ description: 'JSON/Text Files', accept: { 'text/plain': ['.txt', '.json'] } }],
-                multiple: false
-            });
-            
-            const file = await handle.getFile();
-            const content = await file.text();
-            
-            // Store the handle for future saves
-            currentFileHandle = handle;
-            
-            applyImportedTxtPayload(content, file.name);
-        } catch (err) {
-            if (err.name !== 'AbortError') console.error('Import failed:', err);
-        }
-    } else {
-        // 3. Fallback: Standard Input
-        document.getElementById('importTxtInput').click();
-    }
+    document.getElementById('importTxtInput').click();
 }
-// In storage-tools.js, update your applyImportedTxtPayload
+
 function applyImportedTxtPayload(jsonString, filePath) {
     const importedData = JSON.parse(jsonString);
     QUESTIONS_CONFIG = importedData;
-    
-    // Explicitly update the global file path tracking
-    activeDataFilePath = filePath; 
 
-    // Sync to disk so subsequent edits have a target
-    commitDatabaseChangesToDisk(); 
-    
+    // Explicitly update the global file path tracking
+    activeDataFilePath = filePath;
+
+    // Silent autosave only — no share sheet, no download
+    commitDatabaseChangesToDisk();
+
     // Force a fresh UI build
-    buildWorkflowUI(); 
-    
+    buildWorkflowUI();
+
     // Ensure the editor view is cleared so it doesn't hold onto stale "draft" data
-    closeControlPage(); 
-    
+    closeControlPage();
+
     alert("✅ Data imported successfully");
     window.location.reload();
 }
@@ -128,14 +143,13 @@ function handleTxtImport(event) {
     logImportDebug('handleTxtImport:fileSelected', {
         name: file.name,
         type: file.type,
-        size: file.size,
-        hasPath: !!file.path
+        size: file.size
     });
 
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
-            applyImportedTxtPayload(e.target.result, file.path || null);
+            applyImportedTxtPayload(e.target.result, file.name || null);
         } catch (err) {
             alert("Error importing: " + err.message);
         }
