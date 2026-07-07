@@ -2,3 +2,5 @@ node_modules/
 uploads/
 dist/
 help.txt
+android/
+.github/
